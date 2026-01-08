@@ -98,11 +98,37 @@ module Danger
 
       @exclude = %w() if @exclude.nil?
 
-      files
+      files = files
         .select { |file| file.end_with?(".swift") }
         .reject { |file| @exclude.any? { |glob| File.fnmatch(glob, file) } }
+        .select { |file| in_working_directory?(file) }
         .uniq
         .sort
+    end
+
+    # When Danger is executed with a non-root working directory, limit checks to files
+    # that are inside that directory (so we don't lint unrelated parts of a mono-repo).
+    #
+    # @return [Boolean]
+    def in_working_directory?(file)
+      prefix = git_working_directory_prefix
+      return true if prefix.nil? || prefix.empty?
+
+      file.start_with?(prefix)
+    end
+
+    # Uses git to report the current working directory relative to the repo root.
+    # - At repo root: returns "" (empty string)
+    # - In a subdir (e.g. ios): returns "ios/"
+    #
+    # @return [String]
+    def git_working_directory_prefix
+      stdout, _stderr, status = Cmd.run(%w(git rev-parse --show-prefix))
+      return "" unless status&.success?
+
+      stdout.to_s.strip
+    rescue StandardError
+      ""
     end
 
     # Send inline comment with danger's warn or fail method

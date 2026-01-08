@@ -10,6 +10,12 @@ module Danger
       before do
         @dangerfile = testing_dangerfile
         @sut = @dangerfile.swiftformat
+
+        # Default: behave as if we're at the repo root (no working directory prefix),
+        # so existing specs don't need to know about git.
+        @cmd = class_double("Danger::Cmd").as_stubbed_const(transfer_nested_constants: true)
+        allow(@cmd).to receive(:run).with(%w(git rev-parse --show-prefix))
+          .and_return(["", "", instance_double(Process::Status, success?: true)])
       end
 
       it "fails if SwiftFormat is not installed" do
@@ -138,6 +144,31 @@ module Danger
             .and_return(success_output)
 
           @sut.additional_args = additional_args
+
+          @sut.check_format(fail_on_error: true)
+
+          status = @sut.status_report
+          expect(status[:errors]).to be_empty
+          expect(status[:markdowns]).to be_empty
+        end
+      end
+
+      context "with working directory set" do
+        let(:success_output) { { errors: [], stats: { run_time: "0.08s" } } }
+
+        it "should not lint swift files outside the working directory" do
+          allow(@sut.git).to receive(:added_files).and_return(%w(ios/Added.swift kmp/Unrelated.swift))
+          allow(@sut.git).to receive(:modified_files).and_return(%w(ios/Modified.swift kmp/ModifiedOutside.swift))
+          allow(@sut.git).to receive(:deleted_files).and_return([])
+          allow(@sut.git).to receive(:renamed_files).and_return([{}])
+          allow_any_instance_of(SwiftFormat).to receive(:installed?).and_return(true)
+
+          allow(@cmd).to receive(:run).with(%w(git rev-parse --show-prefix))
+            .and_return(["ios/", "", instance_double(Process::Status, success?: true)])
+
+          allow_any_instance_of(SwiftFormat).to receive(:check_format)
+            .with(%w(ios/Added.swift ios/Modified.swift), nil, nil)
+            .and_return(success_output)
 
           @sut.check_format(fail_on_error: true)
 
