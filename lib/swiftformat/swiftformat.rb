@@ -16,11 +16,13 @@ module Danger
       @repo_root = `git rev-parse --show-toplevel`.strip
       @current_dir = Dir.pwd
 
-      # Calculate the relative path from repo root to current directory
-      @current_dir_relative = Pathname.new(@current_dir).relative_path_from(Pathname.new(@repo_root)).to_s
+      repo_root_path = Pathname.new(@repo_root)
+      current_dir_path = Pathname.new(@current_dir)
 
-      # Adjust file paths to be relative to current working directory
-      adjusted_files = files.map { |file| adjust_file_path(file) }
+      # Danger's git file paths are typically repo-root-relative, even when Danger runs
+      # from a subdirectory. SwiftFormat is executed in the current working directory,
+      # so we convert repo-root-relative paths into paths relative to the current dir.
+      adjusted_files = files.map { |file| adjust_file_path(file, repo_root_path, current_dir_path) }
 
       cmd = [@path] + adjusted_files
       cmd << additional_args.split unless additional_args.nil? || additional_args.empty?
@@ -49,16 +51,18 @@ module Danger
 
     private
 
-    def adjust_file_path(file)
-      # If file path starts with the current directory relative path, strip it
-      if @current_dir_relative && @current_dir_relative != "." && file.start_with?("#{@current_dir_relative}/")
-        file.sub("#{@current_dir_relative}/", "")
-      elsif @current_dir_relative && @current_dir_relative == "."
-        # We're at repo root, file paths are already correct
-        file
-      else
-        file
-      end
+    def adjust_file_path(file, repo_root_path, current_dir_path)
+      return file if file.nil?
+
+      # Keep explicit "current directory" target stable (used in specs and supported by swiftformat).
+      return file if file == "." || file == "./"
+
+      file_path = Pathname.new(file)
+      return file if file_path.absolute?
+
+      # Convert repo-root-relative file/directory paths into paths relative to current working dir.
+      absolute = repo_root_path.join(file_path).cleanpath
+      absolute.relative_path_from(current_dir_path).to_s
     end
 
     def process(output)

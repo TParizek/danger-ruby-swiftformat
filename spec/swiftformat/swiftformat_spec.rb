@@ -42,6 +42,17 @@ RSpec.describe Danger::SwiftFormat do
       @sut.check_format(files)
     end
 
+    it "should run swiftformat on repo-root-relative files when executed from a subdirectory" do
+      allow(@sut).to receive(:`).with("git rev-parse --show-toplevel").and_return("/repo\n")
+      allow(Dir).to receive(:pwd).and_return("/repo/ios")
+
+      expect(@cmd).to receive(:run)
+        .with(%w(swiftformat ../kmp/app/ios/iosApp/AppSample.swift --lint --lenient))
+        .and_return(fixture("swiftformat_output.txt"))
+
+      @sut.check_format(%w(kmp/app/ios/iosApp/AppSample.swift))
+    end
+
     it "should return a formatted output including rules when there are errors" do
       expect(@cmd).to receive(:run)
         .with(%w(swiftformat . --lint --lenient))
